@@ -27,12 +27,7 @@
       align-items: center;
       padding: 16px;
     }
-    h1 {
-      font-size: 1.4rem;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-      margin-bottom: 4px;
-    }
+    h1 { font-size: 1.4rem; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 4px; }
     .sub { color: var(--muted); font-size: 0.85rem; margin-bottom: 12px; text-align: center; }
     .wrap {
       width: min(960px, 100%);
@@ -58,10 +53,7 @@
       border-top: 1px solid var(--border);
       align-items: center;
     }
-    .player {
-      font-size: 0.85rem;
-      line-height: 1.4;
-    }
+    .player { font-size: 0.85rem; line-height: 1.4; }
     .player.p1 { color: var(--p1); }
     .player.p2 { color: var(--p2); text-align: right; }
     .player strong { display: block; font-size: 0.95rem; color: var(--text); }
@@ -71,11 +63,7 @@
       font-weight: 600;
       font-size: 0.8rem;
     }
-    .center {
-      text-align: center;
-      font-size: 0.8rem;
-      color: var(--muted);
-    }
+    .center { text-align: center; font-size: 0.8rem; color: var(--muted); }
     .center .wind { color: var(--text); font-weight: 600; font-size: 0.95rem; }
     .controls {
       display: flex;
@@ -93,10 +81,7 @@
       font-size: 0.8rem;
       color: var(--muted);
     }
-    .controls input[type="range"] {
-      width: 120px;
-      accent-color: var(--accent);
-    }
+    .controls input[type="range"] { width: 120px; accent-color: var(--accent); }
     .controls .val {
       min-width: 2.5em;
       color: var(--text);
@@ -127,8 +112,8 @@
       font-size: 0.78rem;
       color: var(--muted);
       text-align: center;
-      max-width: 520px;
-      line-height: 1.45;
+      max-width: 560px;
+      line-height: 1.5;
     }
     .banner {
       position: absolute;
@@ -149,6 +134,23 @@
     .banner h2 { font-size: 1.3rem; margin-bottom: 6px; }
     .banner p { color: var(--muted); font-size: 0.9rem; }
     .stage { position: relative; }
+    .toast {
+      position: absolute;
+      left: 50%;
+      top: 16px;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.75);
+      color: var(--accent);
+      font-size: 0.85rem;
+      font-weight: 600;
+      padding: 6px 14px;
+      border-radius: 999px;
+      opacity: 0;
+      transition: opacity 0.2s;
+      z-index: 4;
+      pointer-events: none;
+    }
+    .toast.show { opacity: 1; }
   </style>
 </head>
 <body>
@@ -158,6 +160,7 @@
   <div class="wrap">
     <div class="stage">
       <canvas id="c" width="960" height="480"></canvas>
+      <div class="toast" id="toast"></div>
       <div class="banner" id="banner">
         <h2 id="bannerTitle">Player 1 wins!</h2>
         <p id="bannerSub">Press Fire or New Game</p>
@@ -166,7 +169,7 @@
     <div class="hud">
       <div class="player p1" id="hud1">
         <strong>Player 1</strong>
-        Angle <span id="a1">45</span>° · Power <span id="p1">50</span><br />
+        Aim <span id="a1">45</span>° · Power <span id="p1">50</span><br />
         Men <span id="m1">100</span>
       </div>
       <div class="center">
@@ -175,12 +178,12 @@
       </div>
       <div class="player p2" id="hud2">
         <strong>Player 2</strong>
-        Angle <span id="a2">45</span>° · Power <span id="p2">50</span><br />
+        Aim <span id="a2">45</span>° · Power <span id="p2">50</span><br />
         Men <span id="m2">100</span>
       </div>
     </div>
     <div class="controls">
-      <label>Angle <input type="range" id="angle" min="5" max="175" value="45" /><span class="val" id="angleVal">45°</span></label>
+      <label>Aim <input type="range" id="angle" min="5" max="85" value="45" /><span class="val" id="angleVal">45°</span></label>
       <label>Power <input type="range" id="power" min="10" max="100" value="50" /><span class="val" id="powerVal">50</span></label>
       <button id="fireBtn">Fire</button>
       <button class="secondary" id="newBtn">New Game</button>
@@ -188,8 +191,10 @@
   </div>
 
   <p class="help">
-    <strong>A / D</strong> or ← → angle · <strong>W / S</strong> or ↑ ↓ power · <strong>Space</strong> or <strong>Enter</strong> fire<br />
-    Each shot costs 10 men. Last gun standing wins. Terrain is destroyed by blasts.
+    <strong>Aim:</strong> ← → or A D (toward opponent; both players use 5°–85°)<br />
+    <strong>Power:</strong> ↑ ↓ or W S · <strong>Fire:</strong> Space / Enter<br />
+    <strong>Move (once/turn):</strong> keys <strong>1–4</strong> left, <strong>6–9</strong> right · <strong>5</strong> = stay · costs <strong>5 men</strong><br />
+    Shot costs 10 men · direct hit −10 · near miss −5 · terrain craters from blasts
   </p>
 
   <script>
@@ -197,7 +202,6 @@
     const ctx = canvas.getContext('2d');
     const W = canvas.width;
     const H = canvas.height;
-    const GROUND_TOP = H * 0.42;
 
     const angleEl = document.getElementById('angle');
     const powerEl = document.getElementById('power');
@@ -208,31 +212,43 @@
     const banner = document.getElementById('banner');
     const bannerTitle = document.getElementById('bannerTitle');
     const bannerSub = document.getElementById('bannerSub');
+    const toastEl = document.getElementById('toast');
 
-    let terrain; // Float32Array height per x
+    let terrain;
     let stars;
     let moon;
-    let wind; // positive = to the right
+    let wind;
     let players;
-    let turn; // 0 or 1
+    let turn;
     let shell = null;
     let particles = [];
     let gameOver = false;
     let animId = null;
+    let movedThisTurn = false;
+    let toastTimer = null;
 
     function rand(a, b) { return a + Math.random() * (b - a); }
 
+    function showToast(msg) {
+      toastEl.textContent = msg;
+      toastEl.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toastEl.classList.remove('show'), 1400);
+    }
+
+    /** Aim 5–85° above horizontal toward the enemy → absolute radians for physics */
+    function aimToRad(player) {
+      // P1 faces right: absolute = aim
+      // P2 faces left: absolute = 180 - aim
+      const absDeg = player.id === 0 ? player.aim : (180 - player.aim);
+      return (absDeg * Math.PI) / 180;
+    }
+
     function generateTerrain() {
       const h = new Float32Array(W);
-      // layered sine + noise for hills
-      let y = H * 0.62;
       const bumps = [];
       for (let i = 0; i < 6; i++) {
-        bumps.push({
-          x: rand(0, W),
-          w: rand(80, 220),
-          a: rand(-70, 110)
-        });
+        bumps.push({ x: rand(0, W), w: rand(80, 220), a: rand(-70, 110) });
       }
       for (let x = 0; x < W; x++) {
         let yy = H * 0.68;
@@ -243,11 +259,9 @@
           const d = (x - b.x) / b.w;
           yy += b.a * Math.exp(-d * d * 2.2);
         }
-        // Keep playable band
         yy = Math.max(H * 0.38, Math.min(H * 0.88, yy));
         h[x] = yy;
       }
-      // Smooth a bit
       for (let pass = 0; pass < 3; pass++) {
         for (let x = 1; x < W - 1; x++) {
           h[x] = (h[x - 1] + h[x] * 2 + h[x + 1]) / 4;
@@ -275,24 +289,31 @@
       const p2x = Math.floor(rand(W * 0.72, W - margin));
       return [
         {
+          id: 0,
           x: p1x,
-          y: terrain[p1x],
-          angle: 45,
+          y: 0,
+          aim: 45,      // degrees toward enemy (right)
           power: 50,
           men: 100,
-          color: '#ff6b6b',
-          facing: 1
+          color: '#ff6b6b'
         },
         {
+          id: 1,
           x: p2x,
-          y: terrain[p2x],
-          angle: 135,
+          y: 0,
+          aim: 45,      // degrees toward enemy (left) — display same as P1
           power: 50,
           men: 100,
-          color: '#7c9cff',
-          facing: -1
+          color: '#7c9cff'
         }
       ];
+    }
+
+    function seatPlayers() {
+      players.forEach(p => {
+        const ix = Math.max(0, Math.min(W - 1, Math.floor(p.x)));
+        p.y = terrain[ix];
+      });
     }
 
     function newGame() {
@@ -302,12 +323,12 @@
       wind = Math.round(rand(-25, 25));
       if (Math.abs(wind) < 3) wind = wind < 0 ? -5 : 5;
       players = placePlayers();
-      // Snap to ground
-      players.forEach(p => { p.y = terrain[Math.floor(p.x)]; });
+      seatPlayers();
       turn = 0;
       shell = null;
       particles = [];
       gameOver = false;
+      movedThisTurn = false;
       banner.classList.remove('show');
       syncUI();
       fireBtn.disabled = false;
@@ -316,47 +337,91 @@
 
     function syncUI() {
       const p = players[turn];
-      angleEl.value = p.angle;
+      angleEl.value = p.aim;
       powerEl.value = p.power;
-      angleVal.textContent = p.angle + '°';
+      angleVal.textContent = p.aim + '°';
       powerVal.textContent = p.power;
-      document.getElementById('a1').textContent = players[0].angle;
+      document.getElementById('a1').textContent = players[0].aim;
       document.getElementById('p1').textContent = players[0].power;
       document.getElementById('m1').textContent = players[0].men;
-      document.getElementById('a2').textContent = players[1].angle;
+      document.getElementById('a2').textContent = players[1].aim;
       document.getElementById('p2').textContent = players[1].power;
       document.getElementById('m2').textContent = players[1].men;
       document.getElementById('hud1').classList.toggle('active', turn === 0 && !gameOver);
       document.getElementById('hud2').classList.toggle('active', turn === 1 && !gameOver);
       const arrow = wind > 0 ? '→' : '←';
       document.getElementById('windLabel').textContent = `Wind ${arrow} ${Math.abs(wind)}`;
-      document.getElementById('turnLabel').textContent = gameOver
-        ? 'Game over'
-        : `Player ${turn + 1} to fire`;
+      let turnText = gameOver ? 'Game over' : `Player ${turn + 1} to fire`;
+      if (!gameOver && !movedThisTurn) turnText += ' · can move';
+      if (!gameOver && movedThisTurn) turnText += ' · moved';
+      document.getElementById('turnLabel').textContent = turnText;
     }
 
     angleEl.addEventListener('input', () => {
       if (gameOver || shell) return;
-      players[turn].angle = parseInt(angleEl.value, 10);
-      angleVal.textContent = players[turn].angle + '°';
+      players[turn].aim = parseInt(angleEl.value, 10);
       syncUI();
     });
     powerEl.addEventListener('input', () => {
       if (gameOver || shell) return;
       players[turn].power = parseInt(powerEl.value, 10);
-      powerVal.textContent = players[turn].power;
       syncUI();
     });
+
+    /** Number keys 1–9: 5 = nothing; else move and charge 5 men (once per turn) */
+    function tryMove(digit) {
+      if (gameOver || shell) return;
+      if (digit === 5) {
+        showToast('Stay put');
+        return;
+      }
+      if (movedThisTurn) {
+        showToast('Already moved this turn');
+        return;
+      }
+      const p = players[turn];
+      if (p.men < 5) {
+        showToast('Not enough men to move');
+        return;
+      }
+
+      // 1→4 left steps, 6→9 right steps; each step 10px
+      let steps = 0;
+      if (digit >= 1 && digit <= 4) steps = -(5 - digit); // 1=-4, 2=-3, 3=-2, 4=-1
+      else if (digit >= 6 && digit <= 9) steps = digit - 5; // 6=1 … 9=4
+      else return;
+
+      const dx = steps * 10;
+      const newX = Math.max(20, Math.min(W - 21, p.x + dx));
+      if (Math.floor(newX) === Math.floor(p.x)) {
+        showToast('Blocked');
+        return;
+      }
+
+      // Don't pass through the other player
+      const other = players[1 - turn];
+      if (Math.abs(newX - other.x) < 28) {
+        showToast('Too close to enemy');
+        return;
+      }
+
+      p.x = newX;
+      p.men -= 5;
+      seatPlayers();
+      movedThisTurn = true;
+      showToast(`Moved ${steps < 0 ? 'left' : 'right'} ${Math.abs(dx)}px (−5 men)`);
+      if (p.men <= 0) checkMenDefeat();
+      syncUI();
+    }
 
     function fire() {
       if (gameOver || shell) return;
       const p = players[turn];
       if (p.men <= 0) return;
 
-      // Desertion cost
       p.men = Math.max(0, p.men - 10);
 
-      const rad = (p.angle * Math.PI) / 180;
+      const rad = aimToRad(p);
       const speed = p.power * 0.22;
       const muzzle = 14;
       shell = {
@@ -364,10 +429,12 @@
         y: p.y - Math.sin(rad) * muzzle - 6,
         vx: Math.cos(rad) * speed,
         vy: -Math.sin(rad) * speed,
-        trail: []
+        trail: [],
+        owner: turn
       };
       fireBtn.disabled = true;
       syncUI();
+      if (p.men <= 0 && !shell) checkMenDefeat();
     }
 
     fireBtn.addEventListener('click', fire);
@@ -375,14 +442,23 @@
 
     window.addEventListener('keydown', (e) => {
       if (e.target.tagName === 'INPUT') return;
+
+      // Number keys for move
+      if (e.key >= '1' && e.key <= '9' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        tryMove(parseInt(e.key, 10));
+        e.preventDefault();
+        return;
+      }
+
       const p = players[turn];
       if (!gameOver && !shell) {
+        // Aim: Right lowers angle, Left raises (feels like tilting the barrel)
         if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
-          p.angle = Math.max(5, p.angle - (e.shiftKey ? 5 : 1));
+          p.aim = Math.min(85, p.aim + (e.shiftKey ? 5 : 1));
           syncUI();
           e.preventDefault();
         } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
-          p.angle = Math.min(175, p.angle + (e.shiftKey ? 5 : 1));
+          p.aim = Math.max(5, p.aim - (e.shiftKey ? 5 : 1));
           syncUI();
           e.preventDefault();
         } else if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
@@ -404,7 +480,6 @@
     });
 
     function explode(cx, cy, radius) {
-      // Terrain crater
       const r = radius;
       const x0 = Math.max(0, Math.floor(cx - r - 2));
       const x1 = Math.min(W - 1, Math.ceil(cx + r + 2));
@@ -413,13 +488,11 @@
         const dip = Math.sqrt(Math.max(0, r * r - dx * dx)) * 0.85;
         if (dip > 0) terrain[x] = Math.min(H - 4, terrain[x] + dip);
       }
-      // Soften crater edges
       for (let pass = 0; pass < 2; pass++) {
         for (let x = Math.max(1, x0); x <= Math.min(W - 2, x1); x++) {
           terrain[x] = (terrain[x - 1] + terrain[x] + terrain[x + 1]) / 3;
         }
       }
-      // Particles
       for (let i = 0; i < 28; i++) {
         const a = Math.random() * Math.PI * 2;
         const sp = rand(1, 5);
@@ -431,56 +504,72 @@
           color: Math.random() > 0.5 ? '#f0c14b' : '#ff6b6b'
         });
       }
-      // Re-seat players on ground
-      players.forEach(p => {
-        const ix = Math.max(0, Math.min(W - 1, Math.floor(p.x)));
-        p.y = terrain[ix];
-      });
+      seatPlayers();
     }
 
-    function hitPlayer(sx, sy, target) {
-      const dx = sx - target.x;
-      const dy = sy - (target.y - 8);
-      return Math.hypot(dx, dy) < 16;
+    function distToPlayer(sx, sy, target) {
+      return Math.hypot(sx - target.x, sy - (target.y - 8));
     }
 
-    function endTurnOrGame(hitIndex) {
-      if (hitIndex >= 0) {
-        players[hitIndex].men = 0;
+    function applySplash(cx, cy, shooter) {
+      // Damage the opponent (not yourself) based on proximity
+      const target = players[1 - shooter];
+      const d = distToPlayer(cx, cy, target);
+      let dmg = 0;
+      if (d < 16) dmg = 10;       // direct
+      else if (d < 32) dmg = 5;   // very near
+      if (dmg > 0) {
+        target.men = Math.max(0, target.men - dmg);
+        showToast(dmg === 10 ? `Direct hit! −${dmg} men` : `Near miss! −${dmg} men`);
+      } else {
+        showToast('Miss');
+      }
+      return target.men <= 0;
+    }
+
+    function checkMenDefeat() {
+      if (players[0].men <= 0 && players[1].men <= 0) {
         gameOver = true;
-        bannerTitle.textContent = `Player ${turn + 1} wins!`;
+        bannerTitle.textContent = 'Draw — both out of men';
         bannerSub.textContent = 'Space / Enter or New Game';
         banner.classList.add('show');
         fireBtn.disabled = false;
         syncUI();
-        return;
+        return true;
       }
-      // Both out of men?
-      if (players[0].men <= 0 && players[1].men <= 0) {
+      if (players[0].men <= 0) {
         gameOver = true;
-        bannerTitle.textContent = 'Draw — both deserted';
-        bannerSub.textContent = 'New Game to try again';
+        bannerTitle.textContent = 'Player 2 wins!';
+        bannerSub.textContent = 'Player 1 ran out of men';
         banner.classList.add('show');
         fireBtn.disabled = false;
         syncUI();
-        return;
+        return true;
       }
-      // Next living player
+      if (players[1].men <= 0) {
+        gameOver = true;
+        bannerTitle.textContent = 'Player 1 wins!';
+        bannerSub.textContent = 'Player 2 ran out of men';
+        banner.classList.add('show');
+        fireBtn.disabled = false;
+        syncUI();
+        return true;
+      }
+      return false;
+    }
+
+    function endTurn() {
+      if (checkMenDefeat()) return;
+      // Next player with men
       let next = 1 - turn;
       if (players[next].men <= 0) next = turn;
       turn = next;
-      if (players[turn].men <= 0) {
-        gameOver = true;
-        bannerTitle.textContent = `Player ${2 - turn} wins!`;
-        bannerSub.textContent = 'Opponent ran out of men';
-        banner.classList.add('show');
-      }
+      movedThisTurn = false;
       fireBtn.disabled = false;
       syncUI();
     }
 
     function update() {
-      // Particles
       for (let i = particles.length - 1; i >= 0; i--) {
         const q = particles[i];
         q.x += q.vx;
@@ -492,64 +581,56 @@
 
       if (!shell) return;
 
-      // Physics substeps for stability
       for (let s = 0; s < 2; s++) {
         shell.trail.push({ x: shell.x, y: shell.y });
         if (shell.trail.length > 40) shell.trail.shift();
 
         shell.vx += wind * 0.0035;
-        shell.vy += 0.12; // gravity
+        shell.vy += 0.12;
         shell.x += shell.vx;
         shell.y += shell.vy;
 
-        // Out of bounds
         if (shell.x < 0 || shell.x >= W || shell.y > H + 40) {
           shell = null;
-          endTurnOrGame(-1);
+          showToast('Miss');
+          endTurn();
           return;
         }
 
-        const ix = Math.floor(shell.x);
-        // Hit terrain
-        if (shell.y >= terrain[ix]) {
-          explode(shell.x, shell.y, 28);
-          // Check splash damage on players
-          let hit = -1;
-          for (let i = 0; i < 2; i++) {
-            if (hitPlayer(shell.x, shell.y, players[i])) hit = i;
-          }
-          // Direct-ish: if explosion near player
-          for (let i = 0; i < 2; i++) {
-            const d = Math.hypot(shell.x - players[i].x, shell.y - (players[i].y - 8));
-            if (d < 30) hit = i;
-          }
-          shell = null;
-          endTurnOrGame(hit);
-          return;
-        }
+        const ix = Math.max(0, Math.min(W - 1, Math.floor(shell.x)));
 
-        // Direct hit on either player
+        // Direct hit on a player mid-flight
         for (let i = 0; i < 2; i++) {
-          if (hitPlayer(shell.x, shell.y, players[i])) {
+          if (i === shell.owner) continue;
+          if (distToPlayer(shell.x, shell.y, players[i]) < 14) {
             explode(shell.x, shell.y, 32);
+            applySplash(shell.x, shell.y, shell.owner);
             shell = null;
-            endTurnOrGame(i);
+            endTurn();
             return;
           }
+        }
+
+        // Ground impact
+        if (shell.y >= terrain[ix]) {
+          const cx = shell.x, cy = shell.y;
+          explode(cx, cy, 28);
+          applySplash(cx, cy, shell.owner);
+          shell = null;
+          endTurn();
+          return;
         }
       }
     }
 
     function drawGun(p) {
-      const rad = (p.angle * Math.PI) / 180;
+      const rad = aimToRad(p);
       const baseY = p.y;
-      // Base
       ctx.fillStyle = p.color;
       ctx.beginPath();
       ctx.arc(p.x, baseY - 4, 7, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillRect(p.x - 9, baseY - 6, 18, 6);
-      // Barrel
       ctx.strokeStyle = p.color;
       ctx.lineWidth = 4;
       ctx.lineCap = 'round';
@@ -560,7 +641,6 @@
     }
 
     function draw() {
-      // Sky gradient
       const g = ctx.createLinearGradient(0, 0, 0, H);
       g.addColorStop(0, '#050814');
       g.addColorStop(0.55, '#0c1228');
@@ -568,7 +648,6 @@
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, W, H);
 
-      // Stars
       for (const s of stars) {
         ctx.globalAlpha = s.a * (0.7 + 0.3 * Math.sin(Date.now() / 400 + s.x));
         ctx.fillStyle = '#fff';
@@ -578,7 +657,6 @@
       }
       ctx.globalAlpha = 1;
 
-      // Moon
       ctx.fillStyle = '#d8dce8';
       ctx.beginPath();
       ctx.arc(moon.x, moon.y, moon.r, 0, Math.PI * 2);
@@ -588,7 +666,6 @@
       ctx.arc(moon.x + moon.r * 0.35, moon.y - moon.r * 0.1, moon.r * 0.85, 0, Math.PI * 2);
       ctx.fill();
 
-      // Terrain
       ctx.fillStyle = '#1a5c3a';
       ctx.beginPath();
       ctx.moveTo(0, H);
@@ -596,7 +673,6 @@
       ctx.lineTo(W - 1, H);
       ctx.closePath();
       ctx.fill();
-      // Terrain rim
       ctx.strokeStyle = '#2d8a54';
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -604,14 +680,12 @@
       for (let x = 1; x < W; x++) ctx.lineTo(x, terrain[x]);
       ctx.stroke();
 
-      // Players
       drawGun(players[0]);
       drawGun(players[1]);
 
-      // Aim ghost for current player
       if (!shell && !gameOver) {
         const p = players[turn];
-        const rad = (p.angle * Math.PI) / 180;
+        const rad = aimToRad(p);
         ctx.strokeStyle = 'rgba(240,193,75,0.35)';
         ctx.lineWidth = 1;
         ctx.setLineDash([4, 4]);
@@ -622,7 +696,6 @@
         ctx.setLineDash([]);
       }
 
-      // Shell trail + shell
       if (shell) {
         ctx.strokeStyle = 'rgba(255,255,255,0.35)';
         ctx.lineWidth = 1.5;
@@ -639,7 +712,6 @@
         ctx.fill();
       }
 
-      // Particles
       for (const q of particles) {
         ctx.globalAlpha = Math.max(0, q.life / 40);
         ctx.fillStyle = q.color;
