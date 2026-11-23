@@ -191,7 +191,7 @@
   </div>
 
   <p class="help">
-    <strong>Aim:</strong> ← → or A D (toward opponent; both players use 5°–85°)<br />
+    <strong>Aim:</strong> ← → or A D (both use 5°–85° toward enemy; left/right mirrored per side)<br />
     <strong>Power:</strong> ↑ ↓ or W S · <strong>Fire:</strong> Space / Enter<br />
     <strong>Move (once/turn):</strong> keys <strong>1–4</strong> left, <strong>6–9</strong> right · <strong>5</strong> = stay · costs <strong>5 men</strong><br />
     Shot costs 10 men · direct hit −10 · near miss −5 · terrain craters from blasts
@@ -452,13 +452,16 @@
 
       const p = players[turn];
       if (!gameOver && !shell) {
-        // Aim: Right lowers angle, Left raises (feels like tilting the barrel)
+        // Mirrored aim: Left raises for P1 (faces right), Left lowers for P2 (faces left)
+        const step = e.shiftKey ? 5 : 1;
         if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
-          p.aim = Math.min(85, p.aim + (e.shiftKey ? 5 : 1));
+          if (p.id === 0) p.aim = Math.min(85, p.aim + step);
+          else p.aim = Math.max(5, p.aim - step);
           syncUI();
           e.preventDefault();
         } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
-          p.aim = Math.max(5, p.aim - (e.shiftKey ? 5 : 1));
+          if (p.id === 0) p.aim = Math.max(5, p.aim - step);
+          else p.aim = Math.min(85, p.aim + step);
           syncUI();
           e.preventDefault();
         } else if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
@@ -508,16 +511,19 @@
     }
 
     function distToPlayer(sx, sy, target) {
-      return Math.hypot(sx - target.x, sy - (target.y - 8));
+      // Measure to gun body center (slightly above ground contact)
+      return Math.hypot(sx - target.x, sy - (target.y - 6));
     }
 
-    function applySplash(cx, cy, shooter) {
-      // Damage the opponent (not yourself) based on proximity
+    /** Damage from impact at (cx,cy). Uses positions BEFORE crater reseat. */
+    function applySplash(cx, cy, shooter, prePositions) {
       const target = players[1 - shooter];
-      const d = distToPlayer(cx, cy, target);
+      const tx = prePositions ? prePositions[target.id].x : target.x;
+      const ty = prePositions ? prePositions[target.id].y : target.y;
+      const d = Math.hypot(cx - tx, cy - (ty - 6));
       let dmg = 0;
-      if (d < 16) dmg = 10;       // direct
-      else if (d < 32) dmg = 5;   // very near
+      if (d < 24) dmg = 10;       // direct / solid hit
+      else if (d < 48) dmg = 5;   // near miss
       if (dmg > 0) {
         target.men = Math.max(0, target.men - dmg);
         showToast(dmg === 10 ? `Direct hit! −${dmg} men` : `Near miss! −${dmg} men`);
@@ -599,12 +605,14 @@
 
         const ix = Math.max(0, Math.min(W - 1, Math.floor(shell.x)));
 
-        // Direct hit on a player mid-flight
+        // Direct hit on opponent mid-flight
         for (let i = 0; i < 2; i++) {
           if (i === shell.owner) continue;
-          if (distToPlayer(shell.x, shell.y, players[i]) < 14) {
-            explode(shell.x, shell.y, 32);
-            applySplash(shell.x, shell.y, shell.owner);
+          if (distToPlayer(shell.x, shell.y, players[i]) < 18) {
+            const cx = shell.x, cy = shell.y;
+            const pre = players.map(p => ({ x: p.x, y: p.y }));
+            explode(cx, cy, 32);
+            applySplash(cx, cy, shell.owner, pre);
             shell = null;
             endTurn();
             return;
@@ -614,8 +622,9 @@
         // Ground impact
         if (shell.y >= terrain[ix]) {
           const cx = shell.x, cy = shell.y;
+          const pre = players.map(p => ({ x: p.x, y: p.y }));
           explode(cx, cy, 28);
-          applySplash(cx, cy, shell.owner);
+          applySplash(cx, cy, shell.owner, pre);
           shell = null;
           endTurn();
           return;
