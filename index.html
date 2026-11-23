@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Night Artillery — browser VGABomb-style duel</title>
+  <meta name="description" content="Two-player artillery duel in the browser. Random hills, wind, angle and power. No install." />
+  <style>
+    :root {
+      --bg: #070a12;
+      --panel: #121826;
+      --border: #2a3348;
+      --text: #e8eefc;
+      --muted: #8b95a8;
+      --p1: #ff6b6b;
+      --p2: #7c9cff;
+      --accent: #f0c14b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 16px;
+    }
+    h1 {
+      font-size: 1.4rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 4px;
+    }
+    .sub { color: var(--muted); font-size: 0.85rem; margin-bottom: 12px; text-align: center; }
+    .wrap {
+      width: min(960px, 100%);
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.45);
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: auto;
+      background: #000;
+      cursor: crosshair;
+      touch-action: none;
+    }
+    .hud {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 12px;
+      padding: 12px 14px;
+      border-top: 1px solid var(--border);
+      align-items: center;
+    }
+    .player {
+      font-size: 0.85rem;
+      line-height: 1.4;
+    }
+    .player.p1 { color: var(--p1); }
+    .player.p2 { color: var(--p2); text-align: right; }
+    .player strong { display: block; font-size: 0.95rem; color: var(--text); }
+    .player.active strong::after {
+      content: " · your turn";
+      color: var(--accent);
+      font-weight: 600;
+      font-size: 0.8rem;
+    }
+    .center {
+      text-align: center;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+    .center .wind { color: var(--text); font-weight: 600; font-size: 0.95rem; }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 12px 14px 14px;
+      border-top: 1px solid var(--border);
+      align-items: center;
+      justify-content: center;
+    }
+    .controls label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+    .controls input[type="range"] {
+      width: 120px;
+      accent-color: var(--accent);
+    }
+    .controls .val {
+      min-width: 2.5em;
+      color: var(--text);
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+    button {
+      font: inherit;
+      font-weight: 600;
+      font-size: 0.9rem;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 18px;
+      cursor: pointer;
+      background: var(--accent);
+      color: #1a1200;
+    }
+    button:hover { filter: brightness(1.08); }
+    button:disabled { opacity: 0.4; cursor: not-allowed; filter: none; }
+    button.secondary {
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+    button.secondary:hover { color: var(--text); border-color: var(--muted); }
+    .help {
+      margin-top: 12px;
+      font-size: 0.78rem;
+      color: var(--muted);
+      text-align: center;
+      max-width: 520px;
+      line-height: 1.45;
+    }
+    .banner {
+      position: absolute;
+      left: 50%;
+      top: 40%;
+      transform: translate(-50%, -50%);
+      background: rgba(0,0,0,0.82);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px 28px;
+      text-align: center;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.25s;
+      z-index: 5;
+    }
+    .banner.show { opacity: 1; }
+    .banner h2 { font-size: 1.3rem; margin-bottom: 6px; }
+    .banner p { color: var(--muted); font-size: 0.9rem; }
+    .stage { position: relative; }
+  </style>
+</head>
+<body>
+  <h1>Night Artillery</h1>
+  <p class="sub">VGABomb-style duel · two players · same keyboard · pure browser</p>
+
+  <div class="wrap">
+    <div class="stage">
+      <canvas id="c" width="960" height="480"></canvas>
+      <div class="banner" id="banner">
+        <h2 id="bannerTitle">Player 1 wins!</h2>
+        <p id="bannerSub">Press Fire or New Game</p>
+      </div>
+    </div>
+    <div class="hud">
+      <div class="player p1" id="hud1">
+        <strong>Player 1</strong>
+        Angle <span id="a1">45</span>° · Power <span id="p1">50</span><br />
+        Men <span id="m1">100</span>
+      </div>
+      <div class="center">
+        <div class="wind" id="windLabel">Wind → 12</div>
+        <div id="turnLabel">Player 1 to fire</div>
+      </div>
+      <div class="player p2" id="hud2">
+        <strong>Player 2</strong>
+        Angle <span id="a2">45</span>° · Power <span id="p2">50</span><br />
+        Men <span id="m2">100</span>
+      </div>
+    </div>
+    <div class="controls">
+      <label>Angle <input type="range" id="angle" min="5" max="175" value="45" /><span class="val" id="angleVal">45°</span></label>
+      <label>Power <input type="range" id="power" min="10" max="100" value="50" /><span class="val" id="powerVal">50</span></label>
+      <button id="fireBtn">Fire</button>
+      <button class="secondary" id="newBtn">New Game</button>
+    </div>
+  </div>
+
+  <p class="help">
+    <strong>A / D</strong> or ← → angle · <strong>W / S</strong> or ↑ ↓ power · <strong>Space</strong> or <strong>Enter</strong> fire<br />
+    Each shot costs 10 men. Last gun standing wins. Terrain is destroyed by blasts.
+  </p>
+
+  <script>
+    const canvas = document.getElementById('c');
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width;
+    const H = canvas.height;
+    const GROUND_TOP = H * 0.42;
+
+    const angleEl = document.getElementById('angle');
+    const powerEl = document.getElementById('power');
+    const angleVal = document.getElementById('angleVal');
+    const powerVal = document.getElementById('powerVal');
+    const fireBtn = document.getElementById('fireBtn');
+    const newBtn = document.getElementById('newBtn');
+    const banner = document.getElementById('banner');
+    const bannerTitle = document.getElementById('bannerTitle');
+    const bannerSub = document.getElementById('bannerSub');
+
+    let terrain; // Float32Array height per x
+    let stars;
+    let moon;
+    let wind; // positive = to the right
+    let players;
+    let turn; // 0 or 1
+    let shell = null;
+    let particles = [];
+    let gameOver = false;
+    let animId = null;
+
+    function rand(a, b) { return a + Math.random() * (b - a); }
+
+    function generateTerrain() {
+      const h = new Float32Array(W);
+      // layered sine + noise for hills
+      let y = H * 0.62;
+      const bumps = [];
+      for (let i = 0; i < 6; i++) {
+        bumps.push({
+          x: rand(0, W),
+          w: rand(80, 220),
+          a: rand(-70, 110)
+        });
+      }
+      for (let x = 0; x < W; x++) {
+        let yy = H * 0.68;
+        yy += Math.sin(x * 0.008) * 28;
+        yy += Math.sin(x * 0.021 + 1.3) * 18;
+        yy += Math.sin(x * 0.045) * 8;
+        for (const b of bumps) {
+          const d = (x - b.x) / b.w;
+          yy += b.a * Math.exp(-d * d * 2.2);
+        }
+        // Keep playable band
+        yy = Math.max(H * 0.38, Math.min(H * 0.88, yy));
+        h[x] = yy;
+      }
+      // Smooth a bit
+      for (let pass = 0; pass < 3; pass++) {
+        for (let x = 1; x < W - 1; x++) {
+          h[x] = (h[x - 1] + h[x] * 2 + h[x + 1]) / 4;
+        }
+      }
+      return h;
+    }
+
+    function generateStars() {
+      const s = [];
+      for (let i = 0; i < 120; i++) {
+        s.push({
+          x: Math.random() * W,
+          y: Math.random() * H * 0.55,
+          r: Math.random() * 1.4 + 0.3,
+          a: Math.random() * 0.6 + 0.3
+        });
+      }
+      return s;
+    }
+
+    function placePlayers() {
+      const margin = 60;
+      const p1x = Math.floor(rand(margin, W * 0.28));
+      const p2x = Math.floor(rand(W * 0.72, W - margin));
+      return [
+        {
+          x: p1x,
+          y: terrain[p1x],
+          angle: 45,
+          power: 50,
+          men: 100,
+          color: '#ff6b6b',
+          facing: 1
+        },
+        {
+          x: p2x,
+          y: terrain[p2x],
+          angle: 135,
+          power: 50,
+          men: 100,
+          color: '#7c9cff',
+          facing: -1
+        }
+      ];
+    }
+
+    function newGame() {
+      terrain = generateTerrain();
+      stars = generateStars();
+      moon = { x: rand(W * 0.2, W * 0.8), y: rand(40, 120), r: rand(18, 28) };
+      wind = Math.round(rand(-25, 25));
+      if (Math.abs(wind) < 3) wind = wind < 0 ? -5 : 5;
+      players = placePlayers();
+      // Snap to ground
+      players.forEach(p => { p.y = terrain[Math.floor(p.x)]; });
+      turn = 0;
+      shell = null;
+      particles = [];
+      gameOver = false;
+      banner.classList.remove('show');
+      syncUI();
+      fireBtn.disabled = false;
+      if (!animId) loop();
+    }
+
+    function syncUI() {
+      const p = players[turn];
+      angleEl.value = p.angle;
+      powerEl.value = p.power;
+      angleVal.textContent = p.angle + '°';
+      powerVal.textContent = p.power;
+      document.getElementById('a1').textContent = players[0].angle;
+      document.getElementById('p1').textContent = players[0].power;
+      document.getElementById('m1').textContent = players[0].men;
+      document.getElementById('a2').textContent = players[1].angle;
+      document.getElementById('p2').textContent = players[1].power;
+      document.getElementById('m2').textContent = players[1].men;
+      document.getElementById('hud1').classList.toggle('active', turn === 0 && !gameOver);
+      document.getElementById('hud2').classList.toggle('active', turn === 1 && !gameOver);
+      const arrow = wind > 0 ? '→' : '←';
+      document.getElementById('windLabel').textContent = `Wind ${arrow} ${Math.abs(wind)}`;
+      document.getElementById('turnLabel').textContent = gameOver
+        ? 'Game over'
+        : `Player ${turn + 1} to fire`;
+    }
+
+    angleEl.addEventListener('input', () => {
+      if (gameOver || shell) return;
+      players[turn].angle = parseInt(angleEl.value, 10);
+      angleVal.textContent = players[turn].angle + '°';
+      syncUI();
+    });
+    powerEl.addEventListener('input', () => {
+      if (gameOver || shell) return;
+      players[turn].power = parseInt(powerEl.value, 10);
+      powerVal.textContent = players[turn].power;
+      syncUI();
+    });
+
+    function fire() {
+      if (gameOver || shell) return;
+      const p = players[turn];
+      if (p.men <= 0) return;
+
+      // Desertion cost
+      p.men = Math.max(0, p.men - 10);
+
+      const rad = (p.angle * Math.PI) / 180;
+      const speed = p.power * 0.22;
+      const muzzle = 14;
+      shell = {
+        x: p.x + Math.cos(rad) * muzzle,
+        y: p.y - Math.sin(rad) * muzzle - 6,
+        vx: Math.cos(rad) * speed,
+        vy: -Math.sin(rad) * speed,
+        trail: []
+      };
+      fireBtn.disabled = true;
+      syncUI();
+    }
+
+    fireBtn.addEventListener('click', fire);
+    newBtn.addEventListener('click', newGame);
+
+    window.addEventListener('keydown', (e) => {
+      if (e.target.tagName === 'INPUT') return;
+      const p = players[turn];
+      if (!gameOver && !shell) {
+        if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+          p.angle = Math.max(5, p.angle - (e.shiftKey ? 5 : 1));
+          syncUI();
+          e.preventDefault();
+        } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+          p.angle = Math.min(175, p.angle + (e.shiftKey ? 5 : 1));
+          syncUI();
+          e.preventDefault();
+        } else if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
+          p.power = Math.min(100, p.power + (e.shiftKey ? 5 : 1));
+          syncUI();
+          e.preventDefault();
+        } else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
+          p.power = Math.max(10, p.power - (e.shiftKey ? 5 : 1));
+          syncUI();
+          e.preventDefault();
+        } else if (e.key === ' ' || e.key === 'Enter') {
+          fire();
+          e.preventDefault();
+        }
+      } else if (gameOver && (e.key === ' ' || e.key === 'Enter')) {
+        newGame();
+        e.preventDefault();
+      }
+    });
+
+    function explode(cx, cy, radius) {
+      // Terrain crater
+      const r = radius;
+      const x0 = Math.max(0, Math.floor(cx - r - 2));
+      const x1 = Math.min(W - 1, Math.ceil(cx + r + 2));
+      for (let x = x0; x <= x1; x++) {
+        const dx = x - cx;
+        const dip = Math.sqrt(Math.max(0, r * r - dx * dx)) * 0.85;
+        if (dip > 0) terrain[x] = Math.min(H - 4, terrain[x] + dip);
+      }
+      // Soften crater edges
+      for (let pass = 0; pass < 2; pass++) {
+        for (let x = Math.max(1, x0); x <= Math.min(W - 2, x1); x++) {
+          terrain[x] = (terrain[x - 1] + terrain[x] + terrain[x + 1]) / 3;
+        }
+      }
+      // Particles
+      for (let i = 0; i < 28; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const sp = rand(1, 5);
+        particles.push({
+          x: cx, y: cy,
+          vx: Math.cos(a) * sp,
+          vy: Math.sin(a) * sp - 2,
+          life: rand(20, 45),
+          color: Math.random() > 0.5 ? '#f0c14b' : '#ff6b6b'
+        });
+      }
+      // Re-seat players on ground
+      players.forEach(p => {
+        const ix = Math.max(0, Math.min(W - 1, Math.floor(p.x)));
+        p.y = terrain[ix];
+      });
+    }
+
+    function hitPlayer(sx, sy, target) {
+      const dx = sx - target.x;
+      const dy = sy - (target.y - 8);
+      return Math.hypot(dx, dy) < 16;
+    }
+
+    function endTurnOrGame(hitIndex) {
+      if (hitIndex >= 0) {
+        players[hitIndex].men = 0;
+        gameOver = true;
+        bannerTitle.textContent = `Player ${turn + 1} wins!`;
+        bannerSub.textContent = 'Space / Enter or New Game';
+        banner.classList.add('show');
+        fireBtn.disabled = false;
+        syncUI();
+        return;
+      }
+      // Both out of men?
+      if (players[0].men <= 0 && players[1].men <= 0) {
+        gameOver = true;
+        bannerTitle.textContent = 'Draw — both deserted';
+        bannerSub.textContent = 'New Game to try again';
+        banner.classList.add('show');
+        fireBtn.disabled = false;
+        syncUI();
+        return;
+      }
+      // Next living player
+      let next = 1 - turn;
+      if (players[next].men <= 0) next = turn;
+      turn = next;
+      if (players[turn].men <= 0) {
+        gameOver = true;
+        bannerTitle.textContent = `Player ${2 - turn} wins!`;
+        bannerSub.textContent = 'Opponent ran out of men';
+        banner.classList.add('show');
+      }
+      fireBtn.disabled = false;
+      syncUI();
+    }
+
+    function update() {
+      // Particles
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const q = particles[i];
+        q.x += q.vx;
+        q.y += q.vy;
+        q.vy += 0.15;
+        q.life--;
+        if (q.life <= 0) particles.splice(i, 1);
+      }
+
+      if (!shell) return;
+
+      // Physics substeps for stability
+      for (let s = 0; s < 2; s++) {
+        shell.trail.push({ x: shell.x, y: shell.y });
+        if (shell.trail.length > 40) shell.trail.shift();
+
+        shell.vx += wind * 0.0035;
+        shell.vy += 0.12; // gravity
+        shell.x += shell.vx;
+        shell.y += shell.vy;
+
+        // Out of bounds
+        if (shell.x < 0 || shell.x >= W || shell.y > H + 40) {
+          shell = null;
+          endTurnOrGame(-1);
+          return;
+        }
+
+        const ix = Math.floor(shell.x);
+        // Hit terrain
+        if (shell.y >= terrain[ix]) {
+          explode(shell.x, shell.y, 28);
+          // Check splash damage on players
+          let hit = -1;
+          for (let i = 0; i < 2; i++) {
+            if (hitPlayer(shell.x, shell.y, players[i])) hit = i;
+          }
+          // Direct-ish: if explosion near player
+          for (let i = 0; i < 2; i++) {
+            const d = Math.hypot(shell.x - players[i].x, shell.y - (players[i].y - 8));
+            if (d < 30) hit = i;
+          }
+          shell = null;
+          endTurnOrGame(hit);
+          return;
+        }
+
+        // Direct hit on either player
+        for (let i = 0; i < 2; i++) {
+          if (hitPlayer(shell.x, shell.y, players[i])) {
+            explode(shell.x, shell.y, 32);
+            shell = null;
+            endTurnOrGame(i);
+            return;
+          }
+        }
+      }
+    }
+
+    function drawGun(p) {
+      const rad = (p.angle * Math.PI) / 180;
+      const baseY = p.y;
+      // Base
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, baseY - 4, 7, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillRect(p.x - 9, baseY - 6, 18, 6);
+      // Barrel
+      ctx.strokeStyle = p.color;
+      ctx.lineWidth = 4;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(p.x, baseY - 8);
+      ctx.lineTo(p.x + Math.cos(rad) * 16, baseY - 8 - Math.sin(rad) * 16);
+      ctx.stroke();
+    }
+
+    function draw() {
+      // Sky gradient
+      const g = ctx.createLinearGradient(0, 0, 0, H);
+      g.addColorStop(0, '#050814');
+      g.addColorStop(0.55, '#0c1228');
+      g.addColorStop(1, '#152038');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, W, H);
+
+      // Stars
+      for (const s of stars) {
+        ctx.globalAlpha = s.a * (0.7 + 0.3 * Math.sin(Date.now() / 400 + s.x));
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+
+      // Moon
+      ctx.fillStyle = '#d8dce8';
+      ctx.beginPath();
+      ctx.arc(moon.x, moon.y, moon.r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#0c1228';
+      ctx.beginPath();
+      ctx.arc(moon.x + moon.r * 0.35, moon.y - moon.r * 0.1, moon.r * 0.85, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Terrain
+      ctx.fillStyle = '#1a5c3a';
+      ctx.beginPath();
+      ctx.moveTo(0, H);
+      for (let x = 0; x < W; x++) ctx.lineTo(x, terrain[x]);
+      ctx.lineTo(W - 1, H);
+      ctx.closePath();
+      ctx.fill();
+      // Terrain rim
+      ctx.strokeStyle = '#2d8a54';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, terrain[0]);
+      for (let x = 1; x < W; x++) ctx.lineTo(x, terrain[x]);
+      ctx.stroke();
+
+      // Players
+      drawGun(players[0]);
+      drawGun(players[1]);
+
+      // Aim ghost for current player
+      if (!shell && !gameOver) {
+        const p = players[turn];
+        const rad = (p.angle * Math.PI) / 180;
+        ctx.strokeStyle = 'rgba(240,193,75,0.35)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y - 8);
+        ctx.lineTo(p.x + Math.cos(rad) * 40, p.y - 8 - Math.sin(rad) * 40);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // Shell trail + shell
+      if (shell) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        for (let i = 0; i < shell.trail.length; i++) {
+          const t = shell.trail[i];
+          if (i === 0) ctx.moveTo(t.x, t.y);
+          else ctx.lineTo(t.x, t.y);
+        }
+        ctx.stroke();
+        ctx.fillStyle = '#fff6a0';
+        ctx.beginPath();
+        ctx.arc(shell.x, shell.y, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Particles
+      for (const q of particles) {
+        ctx.globalAlpha = Math.max(0, q.life / 40);
+        ctx.fillStyle = q.color;
+        ctx.fillRect(q.x, q.y, 2.5, 2.5);
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    function loop() {
+      update();
+      draw();
+      animId = requestAnimationFrame(loop);
+    }
+
+    newGame();
+  </script>
+</body>
+</html>
