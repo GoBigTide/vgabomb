@@ -30,7 +30,7 @@
     h1 { font-size: 1.4rem; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 4px; }
     .sub { color: var(--muted); font-size: 0.85rem; margin-bottom: 12px; text-align: center; }
     .wrap {
-      width: min(960px, 100%);
+      width: min(1200px, 100%);
       background: var(--panel);
       border: 1px solid var(--border);
       border-radius: 12px;
@@ -159,7 +159,7 @@
 
   <div class="wrap">
     <div class="stage">
-      <canvas id="c" width="960" height="480"></canvas>
+      <canvas id="c" width="1200" height="480"></canvas>
       <div class="toast" id="toast"></div>
       <div class="banner" id="banner">
         <h2 id="bannerTitle">Player 1 wins!</h2>
@@ -247,17 +247,18 @@
     function generateTerrain() {
       const h = new Float32Array(W);
       const bumps = [];
-      for (let i = 0; i < 6; i++) {
-        bumps.push({ x: rand(0, W), w: rand(80, 220), a: rand(-70, 110) });
+      // More / stronger bumps → hillier maps on average
+      for (let i = 0; i < 9; i++) {
+        bumps.push({ x: rand(0, W), w: rand(70, 240), a: rand(-95, 140) });
       }
       for (let x = 0; x < W; x++) {
         let yy = H * 0.68;
-        yy += Math.sin(x * 0.008) * 28;
-        yy += Math.sin(x * 0.021 + 1.3) * 18;
-        yy += Math.sin(x * 0.045) * 8;
+        yy += Math.sin(x * 0.007) * 34;
+        yy += Math.sin(x * 0.019 + 1.3) * 24;
+        yy += Math.sin(x * 0.042) * 12;
         for (const b of bumps) {
           const d = (x - b.x) / b.w;
-          yy += b.a * Math.exp(-d * d * 2.2);
+          yy += b.a * Math.exp(-d * d * 2.0);
         }
         yy = Math.max(H * 0.38, Math.min(H * 0.88, yy));
         h[x] = yy;
@@ -294,7 +295,7 @@
           y: 0,
           aim: 45,      // degrees toward enemy (right)
           power: 50,
-          men: 100,
+          men: 125,
           color: '#ff6b6b'
         },
         {
@@ -303,7 +304,7 @@
           y: 0,
           aim: 45,      // degrees toward enemy (left) — display same as P1
           power: 50,
-          men: 100,
+          men: 125,
           color: '#7c9cff'
         }
       ];
@@ -320,7 +321,7 @@
       terrain = generateTerrain();
       stars = generateStars();
       moon = { x: rand(W * 0.2, W * 0.8), y: rand(40, 120), r: rand(18, 28) };
-      wind = Math.round(rand(-25, 25));
+      wind = Math.round(rand(-30, 30));
       if (Math.abs(wind) < 3) wind = wind < 0 ? -5 : 5;
       players = placePlayers();
       seatPlayers();
@@ -391,7 +392,7 @@
       else if (digit >= 6 && digit <= 9) steps = digit - 5; // 6=1 … 9=4
       else return;
 
-      const dx = steps * 10;
+      const dx = steps * 15;
       const newX = Math.max(20, Math.min(W - 21, p.x + dx));
       if (Math.floor(newX) === Math.floor(p.x)) {
         showToast('Blocked');
